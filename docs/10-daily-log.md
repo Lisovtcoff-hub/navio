@@ -1,0 +1,9 @@
+# Daily Log
+
+## Day 1
+Done:
+- ...
+Blocked:
+- ...
+Next:
+- ...
