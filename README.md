@@ -19,5 +19,17 @@ cd backend
 python -m venv .venv
 # Windows PowerShell:
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+pip install -r requirements-dev.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Healthcheck:
+- http://localhost:8000/api/v1/health
+
+### 2) Docker (backend + Postgres)
+
+```bash
+cd infra
+cp ../backend/.env.example ../backend/.env
+docker compose up --build
+```
