@@ -22,21 +22,28 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install deps
+        working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements-dev.txt
+          pip install -r requirements-dev.txt
 
       - name: Ruff format (check)
+        working-directory: backend
         run: |
-          ruff format --check backend/app backend/tests
+          ruff format --check app tests
 
       - name: Ruff lint
+        working-directory: backend
         run: |
-          ruff check backend/app backend/tests
+          ruff check app tests
 
       - name: Pytest
+        working-directory: backend
         run: |
           pytest -q
-        working-directory: backend
