@@ -3,15 +3,9 @@ from __future__ import annotations
 import logging
 
 
-def configure_logging(*, debug: bool) -> None:
-    """Minimal logging config.
-
-    Uvicorn will also configure logging; this ensures consistent formatting when
-    running tests or scripts.
-    """
-
-    level = logging.DEBUG if debug else logging.INFO
+def setup_logging(log_level: str = "INFO") -> None:
     logging.basicConfig(
-        level=level,
+        level=log_level.upper(),
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )

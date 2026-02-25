@@ -1,12 +1,27 @@
-from __future__ import annotations
+import logging
+from typing import Annotated
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
-from app.schemas.health import HealthResponse
+from app.deps import get_db
 
-router = APIRouter()
+router = APIRouter(tags=["health"])
+logger = logging.getLogger(__name__)
 
 
-@router.get("/health", response_model=HealthResponse)
-def health_check() -> HealthResponse:
-    return HealthResponse(status="ok")
+@router.get("/health")
+def health():
+    logger.debug("Health endpoint called")
+    return {"status": "ok"}
+
+
+@router.get("/health/db")
+def health_db(db: Annotated[Session, Depends(get_db)]):
+    try:
+        db.execute(text("SELECT 1"))
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return {"status": "error", "details": str(e)}

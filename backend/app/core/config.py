@@ -1,31 +1,16 @@
 from __future__ import annotations
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+
+from dotenv import load_dotenv
+from pydantic import BaseModel
+
+load_dotenv()
 
 
-class Settings(BaseSettings):
-    """Backend configuration.
-
-    All environment variables are prefixed with NAVIO_.
-    Example: NAVIO_DEBUG=true
-    """
-
-    model_config = SettingsConfigDict(
-        env_prefix="NAVIO_",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
-
-    # App
-    env: str = "local"
-    debug: bool = True
-    project_name: str = "Navio API"
-    version: str = "0.1.0"
-    api_v1_prefix: str = "/api/v1"
-
-    # CORS
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+class Settings(BaseModel):
+    APP_ENV: str = os.getenv("APP_ENV", "dev")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 
 
 settings = Settings()
