@@ -1,324 +1,381 @@
-# Navio — DB Schema (MVP)
+# 06 — DB schema (Navio) v2 — приоритеты и срезы
 
-Цель MVP: тренировка/экзамен/ошибки/прогресс + материалы (уроки/видео) + минимальный teacher-mode (группы + кастомные тесты) + лайки/комменты.
+Документ описывает **целевую схему БД** для MVP и следующих этапов.  
+Формат: **P0/P1/P2** + **вертикальные срезы** (что делать “кусочками”, чтобы быстрее прийти к MVP).
 
-> Все временные поля: `timestamptz`.
-> PK: `uuid` (генерация на стороне приложения или `gen_random_uuid()`).
-> Строковые enum-поля в MVP допустимы, но лучше добавить CHECK constraints.
+> Технологии: Postgres + SQLAlchemy (sync) + Alembic.  
+> Время — `timestamptz`, идентификаторы — `uuid` (как у тебя в текущих моделях).
 
 ---
 
-## 1) users
+## Принципы (важно)
+1) **P0 = только то, что нужно для работающего core-MVP** (auth → тренировка → экзамен → ошибки/прогресс → лидерборд).  
+2) **Attempts — единый “лог фактов”**: одна таблица покрывает тренировки и экзамены.  
+3) **Целостность важнее “красоты”**: используем FK, UNIQUE, CHECK, индексы по частым запросам.  
+4) Любые “фичи вокруг” (teacher mode, лайки, комменты, подписки) — позже.
 
-**users**
-- `id` uuid PK
-- `email` text NOT NULL UNIQUE
-- `nickname` text NOT NULL UNIQUE
-- `created_at` timestamptz NOT NULL DEFAULT now()
+---
 
-- `is_plus` boolean NOT NULL DEFAULT false
-- `is_teacher` boolean NOT NULL DEFAULT false
+# P0 — MVP Core
 
-- `days_streak` int NOT NULL DEFAULT 0  _(optional cache; можно считать по фактам)_
-- `lessons_passed` int NOT NULL DEFAULT 0 _(optional cache; можно считать по lesson_progress)_
+## Срез A (P0): Auth + Users
+### users
+- **id** uuid PK
+- **email** text NOT NULL UNIQUE (lowercased в приложении)
+- **nickname** text NOT NULL UNIQUE  ← нужен для лидерборда
+- **is_teacher** boolean NOT NULL DEFAULT false
+- **points** int NOT NULL DEFAULT 0  ← очки для таблицы лидеров
+- **created_at** timestamptz NOT NULL DEFAULT now()
 
-Indexes:
+Индексы:
 - UNIQUE(email)
 - UNIQUE(nickname)
+- INDEX(points) *(для лидерборда; в Postgres это всё равно может помочь)*
 
-**login_codes**
-- `id` uuid PK
-- `email` text NOT NULL
-- `code_hash` text NOT NULL (храним не сам код, а хэш)
-- `purpose` text NOT NULL DEFAULT 'login' (login, signup)
-- `created_at` timestamptz NOT NULL DEFAULT now()
-- `expires_at` timestamptz NOT NULL (например +10 минут)
-- `attempts_left` int NOT NULL DEFAULT 5
-- `consumed_at` timestamptz NULL
-- `ip` text NULL
-- `user_agent` text NULL
+> Рекомендация по UX: ник не участвует в авторизации, но должен быть задан.  
+> Для MVP можно: (1) просить ник при первом входе, либо (2) авто-генерировать временный ник и дать поменять.
 
-Indexes:
+### login_codes
+- **id** uuid PK
+- **email** text NOT NULL (index)
+- **code_hash** text NOT NULL
+- **expires_at** timestamptz NOT NULL
+- **consumed_at** timestamptz NULL
+- **created_at** timestamptz NOT NULL DEFAULT now()
+
+Индексы:
 - INDEX(email, created_at DESC)
-- INDEX(expires_at)
+- INDEX(email, expires_at)
 
-**refresh_sessions**
-- `id` (uuid)
-- `user_id` (fk)
-- `token_hash`
-- `created_at`
-- `expires_at`
-- `revoked_at` (nullable)
+### refresh_sessions
+- **id** uuid PK
+- **user_id** uuid NOT NULL FK → users(id) ON DELETE CASCADE
+- **refresh_token_hash** text NOT NULL UNIQUE
+- **expires_at** timestamptz NOT NULL
+- **revoked_at** timestamptz NULL
+- **created_at** timestamptz NOT NULL DEFAULT now()
 
----
-
-## 2) topics
-
-**topics**
-- `id` uuid PK
-- `title` text NOT NULL UNIQUE
-
-Indexes:
-- UNIQUE(title)
+Индексы:
+- INDEX(user_id, expires_at)
 
 ---
 
-## 3) questions / answers
+## Срез B (P0): Контент (темы → вопросы → ответы)
+### topics
+- **id** uuid PK
+- **title** text NOT NULL
+- **sort_order** int NOT NULL DEFAULT 0
+- **created_at** timestamptz NOT NULL DEFAULT now()
 
-**questions**
-- `id` uuid PK
-- `topic_id` uuid NOT NULL FK -> topics(id)
-- `text` text NOT NULL
-- `image_url` text NULL
-- `explanation_short` text NULL
-- `explanation_full` text NULL
-- `source_version` text NULL
-- `updated_at` timestamptz NOT NULL DEFAULT now()
+### questions
+- **id** uuid PK
+- **topic_id** uuid NOT NULL FK → topics(id) ON DELETE RESTRICT
+- **text** text NOT NULL
+- **explanation** text NULL  *(можно хранить кратко; подробности — через lessons в P1)*
+- **source** text NULL *(источник/ссылка)*
+- **is_active** boolean NOT NULL DEFAULT true
+- **created_at** timestamptz NOT NULL DEFAULT now()
+- **updated_at** timestamptz NOT NULL DEFAULT now()
 
-Indexes:
+Индексы:
 - INDEX(topic_id)
-- INDEX(updated_at)
+- INDEX(is_active)
 
-**answers**
-- `id` uuid PK
-- `question_id` uuid NOT NULL FK -> questions(id) ON DELETE CASCADE
-- `text` text NOT NULL
-- `is_correct` boolean NOT NULL DEFAULT false
+### answers
+- **id** uuid PK
+- **question_id** uuid NOT NULL FK → questions(id) ON DELETE CASCADE
+- **text** text NOT NULL
+- **is_correct** boolean NOT NULL DEFAULT false
+- **sort_order** int NOT NULL DEFAULT 0
 
-Indexes:
+Ограничения/индексы:
 - INDEX(question_id)
-- (optional) UNIQUE(question_id) WHERE is_correct=true  _(если гарантируем 1 правильный ответ)_
+- **UNIQUE(id, question_id)**  ← нужно для составного FK из attempts (см. ниже)
+
+> Важно: корректный ответ — один (обычно). Если хочешь жёстко:  
+> можно добавить частичный уникальный индекс “только один is_correct=true на вопрос” (P1).
 
 ---
 
-## 4) attempts (самая “горячая” таблица)
+## Срез C (P0): Attempts (тренировка + ошибки + прогресс)
+### attempts
+- **id** uuid PK
+- **user_id** uuid NOT NULL FK → users(id) ON DELETE CASCADE
+- **question_id** uuid NOT NULL FK → questions(id) ON DELETE RESTRICT
+- **answer_id** uuid NULL  *(если “пропуск”, либо не отвечал)*
+- **is_correct** boolean NOT NULL
+- **mode** text NOT NULL CHECK (mode in ('training','exam')) DEFAULT 'training'
+- **exam_id** uuid NULL FK → exams(id) ON DELETE CASCADE  *(появится после добавления exams)*
+- **created_at** timestamptz NOT NULL DEFAULT now()
 
-**attempts**
-- `id` uuid PK
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `question_id` uuid NOT NULL FK -> questions(id)
-- `answer_id` uuid NOT NULL FK -> answers(id)
+Ключевой constraint (очень важно):
+- **FOREIGN KEY (answer_id, question_id) REFERENCES answers(id, question_id)**  
+  (требует UNIQUE(id, question_id) в answers)
 
-- `is_correct` boolean NOT NULL
-- `mode` text NOT NULL  _(training|exam)_
-- `exam_id` uuid NULL FK -> exams(id) ON DELETE SET NULL
-
-- `created_at` timestamptz NOT NULL DEFAULT now()
-- `time_spent_ms` int NULL  _(опционально, если нужен тайминг)_
-
-Constraints:
-- CHECK (mode in ('training','exam'))
-
-Indexes (MVP MUST HAVE):
-- INDEX(user_id, created_at DESC)                         -- лента попыток/последние ответы
-- INDEX(user_id, is_correct, created_at DESC)             -- ошибки/неправильные
-- INDEX(user_id, question_id)                             -- контроль повторов / анти-спам повторов
-- INDEX(exam_id)                                          -- ответы экзамена
-- INDEX(user_id, mode, created_at DESC)                   -- фильтрация по режиму
-
----
-
-## 5) exams + exam_items
-
-**exams**
-- `id` uuid PK
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `started_at` timestamptz NOT NULL DEFAULT now()
-- `finished_at` timestamptz NULL
-- `status` text NOT NULL DEFAULT 'in_progress'  _(in_progress|passed|failed)_
-
-Constraints:
-- CHECK (status in ('in_progress','passed','failed'))
-
-Indexes:
-- INDEX(user_id, started_at DESC)
-
-**exam_items** (фиксирует состав экзамена)
-- `exam_id` uuid NOT NULL FK -> exams(id) ON DELETE CASCADE
-- `question_id` uuid NOT NULL FK -> questions(id)
-- `position` int NOT NULL  _(0..19)_
-
-PK/Constraints:
-- PRIMARY KEY (exam_id, position)
-- UNIQUE (exam_id, question_id)
-
-Indexes:
-- INDEX(exam_id)
-- INDEX(question_id)
-
----
-
-## 6) lessons / lesson_progress
-
-**lessons**
-- `id` uuid PK
-- `topic_id` uuid NOT NULL FK -> topics(id)
-- `title` text NOT NULL
-- `text` text NULL
-- `video_url` text NULL  _(tiktok-like, youtube, s3 link etc.)_
-- `created_at` timestamptz NOT NULL DEFAULT now()
-- `updated_at` timestamptz NOT NULL DEFAULT now()
-
-Indexes:
-- INDEX(topic_id)
-- INDEX(updated_at)
-
-**lesson_progress**
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `lesson_id` uuid NOT NULL FK -> lessons(id) ON DELETE CASCADE
-- `status` text NOT NULL DEFAULT 'started'  _(started|completed)_
-- `updated_at` timestamptz NOT NULL DEFAULT now()
-
-PK/Constraints:
-- PRIMARY KEY (user_id, lesson_id)
-- CHECK (status in ('started','completed'))
-
-Indexes:
-- INDEX(user_id, updated_at DESC)
-- INDEX(lesson_id)
-
----
-
-## 7) comments + likes (чтобы лайки не “врали”)
-
-**comments**
-- `id` uuid PK
-- `lesson_id` uuid NOT NULL FK -> lessons(id) ON DELETE CASCADE
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `text` text NOT NULL
-- `created_at` timestamptz NOT NULL DEFAULT now()
-
-Indexes:
-- INDEX(lesson_id, created_at DESC)        -- список комментариев урока
+Индексы:
 - INDEX(user_id, created_at DESC)
-
-**lesson_likes**
-- `lesson_id` uuid NOT NULL FK -> lessons(id) ON DELETE CASCADE
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `created_at` timestamptz NOT NULL DEFAULT now()
-
-PK/Constraints:
-- PRIMARY KEY (lesson_id, user_id)
-
-**comment_likes**
-- `comment_id` uuid NOT NULL FK -> comments(id) ON DELETE CASCADE
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `created_at` timestamptz NOT NULL DEFAULT now()
-
-PK/Constraints:
-- PRIMARY KEY (comment_id, user_id)
-
-> Примечание: `likes_count` в lessons/comments можно хранить как кеш (денорм),
-> но источник истины — таблицы likes. Для MVP можно считать count(*) по likes.
+- INDEX(user_id, is_correct, created_at DESC)
+- INDEX(question_id)
+- INDEX(exam_id) *(когда появится)*
 
 ---
 
-## 8) entitlements / подписка (Plus)
+## Срез D (P0): Экзамен (20 вопросов + воспроизводимость)
+### exams
+- **id** uuid PK
+- **user_id** uuid NOT NULL FK → users(id) ON DELETE CASCADE
+- **status** text NOT NULL CHECK (status in ('in_progress','finished')) DEFAULT 'in_progress'
+- **started_at** timestamptz NOT NULL DEFAULT now()
+- **finished_at** timestamptz NULL
+- **result_correct** int NOT NULL DEFAULT 0
+- **result_wrong** int NOT NULL DEFAULT 0
+- **result_passed** boolean NULL
 
-MVP-версия: можно держать `users.is_plus`, а историю — в отдельной таблице.
-
-**plus_entitlements**
-- `id` uuid PK
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `started_at` timestamptz NOT NULL
-- `ends_at` timestamptz NULL
-- `source` text NULL _(manual|google|apple|promo)_
-- `created_at` timestamptz NOT NULL DEFAULT now()
-
-Indexes:
+Индексы:
 - INDEX(user_id, started_at DESC)
-- (optional) INDEX(ends_at)
+- INDEX(status)
 
-> В MVP допускается включать/выключать Plus админом, а платежи — Post-MVP.
+### exam_items
+- **exam_id** uuid NOT NULL FK → exams(id) ON DELETE CASCADE
+- **question_id** uuid NOT NULL FK → questions(id) ON DELETE RESTRICT
+- **position** int NOT NULL CHECK (position >= 0 AND position < 20)
+- **created_at** timestamptz NOT NULL DEFAULT now()
+
+PK/ограничения:
+- PRIMARY KEY (exam_id, position)
+- UNIQUE(exam_id, question_id)
+
+> В attempts для экзамена: mode='exam' и exam_id заполнен.
 
 ---
 
-## 9) teacher mode: группы + membership
+## Срез E (P0): Лидерборд (очки + достижения)
+Цель: быстро сделать таблицу лидеров “по очкам” + минимальная аудит-таблица, чтобы очки не были “магией”.
 
-**teacher_groups**
-- `id` uuid PK
-- `teacher_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `name` text NOT NULL
-- `description` text NULL
-- `img_link` text NULL
-- `created_at` timestamptz NOT NULL DEFAULT now()
+### users.points (уже выше)
+- используется для быстрых запросов лидерборда:
+  - ORDER BY points DESC, created_at ASC LIMIT 100
 
-Indexes:
-- INDEX(teacher_id, created_at DESC)
-- UNIQUE(teacher_id, name)
+### point_events  *(минимальный “ledger”, рекомендую)*
+- **id** uuid PK
+- **user_id** uuid NOT NULL FK → users(id) ON DELETE CASCADE
+- **event_type** text NOT NULL  
+  примеры: 'attempt_correct', 'exam_passed', 'daily_streak', 'admin_adjust'
+- **delta** int NOT NULL  *(+/-)*
+- **meta** jsonb NULL  *(например exam_id, question_id, streak_days)*
+- **created_at** timestamptz NOT NULL DEFAULT now()
 
-**teacher_group_members**
-- `group_id` uuid NOT NULL FK -> teacher_groups(id) ON DELETE CASCADE
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-- `joined_at` timestamptz NOT NULL DEFAULT now()
+Индексы:
+- INDEX(user_id, created_at DESC)
+- INDEX(event_type, created_at DESC)
 
-PK/Constraints:
+Логика начисления очков (MVP пример):
+- за правильный ответ в тренировке: +1
+- за сдачу экзамена: +20
+- штраф за неправильный ответ (опционально): 0 или -1
+
+Правило обновления points:
+- при вставке point_events приложение в транзакции:
+  1) INSERT point_events
+  2) UPDATE users SET points = points + delta WHERE id = user_id
+
+Почему так лучше, чем только users.points:
+- можно объяснить пользователю “откуда очки”
+- проще дебажить и откатывать
+- проще защищаться от накрутки (только сервер создаёт события)
+
+---
+
+# P1 — Расширение контента и UX (после core-MVP)
+
+## Срез F (P1): Уроки/материалы + прогресс по урокам
+### lessons
+- **id** uuid PK
+- **topic_id** uuid NULL FK → topics(id) ON DELETE SET NULL
+- **title** text NOT NULL
+- **kind** text NOT NULL CHECK (kind in ('article','video','link')) DEFAULT 'article'
+- **content_url** text NULL
+- **content_md** text NULL  *(если хранишь текст локально)*
+- **created_at** timestamptz NOT NULL DEFAULT now()
+- **updated_at** timestamptz NOT NULL DEFAULT now()
+
+Индексы:
+- INDEX(topic_id)
+
+### lesson_progress
+- **user_id** uuid NOT NULL FK → users(id) ON DELETE CASCADE
+- **lesson_id** uuid NOT NULL FK → lessons(id) ON DELETE CASCADE
+- **status** text NOT NULL CHECK (status in ('started','completed')) DEFAULT 'started'
+- **started_at** timestamptz NOT NULL DEFAULT now()
+- **completed_at** timestamptz NULL
+
+PK:
+- PRIMARY KEY (user_id, lesson_id)
+
+---
+
+## Срез G (P1): Нормализация правил ПДД / источников (опционально)
+- rules (id, title, body_md, source_url, updated_at)
+- topic_rules (topic_id, rule_id) many-to-many
+
+---
+
+## Срез H (P1): Стрики (дни активности) (опционально)
+### user_streaks
+- **user_id** uuid PK FK → users(id)
+- **current_days** int NOT NULL DEFAULT 0
+- **best_days** int NOT NULL DEFAULT 0
+- **last_active_date** date NULL
+
+---
+
+# P2 — Teacher mode, social, монетизация
+
+## Срез I (P2): Teacher groups
+### teacher_groups
+- **id** uuid PK
+- **owner_user_id** uuid NOT NULL FK → users(id) ON DELETE CASCADE
+- **title** text NOT NULL
+- **created_at** timestamptz NOT NULL DEFAULT now()
+
+### teacher_group_members
+- **group_id** uuid NOT NULL FK → teacher_groups(id) ON DELETE CASCADE
+- **user_id** uuid NOT NULL FK → users(id) ON DELETE CASCADE
+- **role** text NOT NULL CHECK (role in ('teacher','student')) DEFAULT 'student'
+- **created_at** timestamptz NOT NULL DEFAULT now()
+
+PK:
 - PRIMARY KEY (group_id, user_id)
 
-Indexes:
-- INDEX(user_id)
-- INDEX(group_id)
+---
 
-> Это лучше, чем `users.teacher_group_id`, потому что пользователь может быть в нескольких группах.
+## Срез J (P2): Custom tests (учительские тесты)
+### custom_tests
+- **id** uuid PK
+- **group_id** uuid NOT NULL FK → teacher_groups(id) ON DELETE CASCADE
+- **title** text NOT NULL
+- **created_at** timestamptz NOT NULL DEFAULT now()
+
+### custom_test_items
+- **custom_test_id** uuid NOT NULL FK → custom_tests(id) ON DELETE CASCADE
+- **question_id** uuid NOT NULL FK → questions(id) ON DELETE RESTRICT
+- **position** int NOT NULL CHECK (position >= 0)
+- PRIMARY KEY (custom_test_id, position)
+- UNIQUE(custom_test_id, question_id)
 
 ---
 
-## 10) custom tests (teacher)
-
-**custom_tests**
-- `id` uuid PK
-- `owner_user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE   _(учитель/создатель)_
-- `group_id` uuid NULL FK -> teacher_groups(id) ON DELETE SET NULL  _(если тест для группы)_
-
-- `title` text NOT NULL
-- `config_json` jsonb NOT NULL  _(вопросы/темы/настройки)_
-- `questions_count` int NOT NULL DEFAULT 0   _(денорм, для удобства)_
-
-- `allowed_attempts` int NULL
-- `time_limit_sec` int NULL
-
-- `link_token` text NOT NULL UNIQUE  _(короткий токен для ссылки)_
-- `is_active` boolean NOT NULL DEFAULT true
-
-- `created_at` timestamptz NOT NULL DEFAULT now()
-- `starts_at` timestamptz NULL
-- `ends_at` timestamptz NULL
-
-Indexes:
-- INDEX(owner_user_id, created_at DESC)
-- INDEX(group_id)
-- UNIQUE(link_token)
-
-**custom_test_attempts**
-- `id` uuid PK
-- `custom_test_id` uuid NOT NULL FK -> custom_tests(id) ON DELETE CASCADE
-- `user_id` uuid NOT NULL FK -> users(id) ON DELETE CASCADE
-
-- `created_at` timestamptz NOT NULL DEFAULT now()
-- `finished_at` timestamptz NULL
-
-- `score` int NOT NULL DEFAULT 0
-- `errors_count` int NOT NULL DEFAULT 0
-- `result_json` jsonb NULL          _(подробности: ответы/ошибки, MVP ok)_
-
-Indexes:
-- INDEX(custom_test_id, created_at DESC)
-- INDEX(user_id, created_at DESC)
+## Срез K (P2): Лайки/комменты
+- lesson_likes (lesson_id, user_id) PK composite
+- question_likes (question_id, user_id) PK composite
+- comments (id, user_id, entity_type, entity_id, body, created_at)
 
 ---
 
-## 11) Минимальные замечания про производительность (ориентир 100k MAU)
-
-1) Основной рост — `attempts`. Индексы выше обязательны.
-2) Для “прогресса” лучше использовать агрегаты:
-   - на MVP можно считать on-demand за последние N дней
-   - post-MVP: таблица `user_topic_stats` или materialized view.
-3) JSONB допустим в `custom_tests.config_json` и `custom_test_attempts.result_json` в MVP,
-   но для глубокой аналитики лучше нормализовать ошибки в отдельную таблицу позже.
+## Срез L (P2): Подписки/права
+- entitlements (user_id, plan, expires_at, created_at)
+- purchases (id, user_id, provider, provider_ref, created_at)
 
 ---
 
-## 12) Non-goals MVP (схема не включает)
-- Платёжные транзакции (чеки, подписки Google/Apple) — Post-MVP
-- Полный RAG/AI — Post-MVP
-- Сложные достижения/ачивки — Post-MVP (можно считать из attempts/lesson_progress)
+# План реализации: последовательность и оценка по дням
+
+Оценка — **дни активной разработки**, без пауз.
+
+## Срез A — Auth + Users (1–2 дня)
+День 1:
+- users: nickname UNIQUE + points + миграция Alembic
+- тесты auth flow не сломались
+День 2 (если нужно):
+- UX для nickname (первый вход / генерация / смена)
+
+## Срез B — Контент (1–2 дня)
+День 1:
+- привести topics/questions/answers к схеме (индексы, updated_at)
+День 2:
+- seed/import контента + тесты
+
+## Срез C — Attempts (2 дня)
+День 1:
+- attempts + составной FK (answer_id, question_id) + миграция + тесты
+День 2:
+- training API (next/answer) + начисление очков (point_events) за correct
+
+## Срез D — Exams (2–3 дня)
+День 1:
+- exams, exam_items + миграция
+- start exam: создать 20 items
+День 2:
+- next/answer + запись attempts с exam_id
+- подсчёт результата
+День 3 (опционально):
+- усложнённые правила “добавочных вопросов” (можно отложить)
+
+## Срез E — Лидерборд (1–2 дня)
+День 1:
+- point_events + транзакционная функция начисления
+- начисление за exam_passed
+День 2:
+- endpoint leaderboard + тесты + пагинация
+
+## Итого P0: 7–11 дней
+- Быстро: ~7–8 дней
+- Реалистично: ~9–11 дней
+
+---
+# P1 (контент + UX)
+
+## Срез F — lessons + lesson_progress: 2–3 дня
+- День 1: таблицы + миграция + CRUD минимально
+- День 2: прогресс (started/completed) + эндпоинты + тесты
+- День 3 (опц.): “рекомендовать урок при ошибке” (по topic_id), полировка
+
+## Срез G — rules + topic_rules (опционально): 2–4 дня
+- День 1: tables + миграция
+- День 2–3: импорт/seed правил + API чтения
+- День 4 (опц.): связывание с вопросами/темами более умно
+
+## Срез H — streaks (опционально): 1–2 дня
+- День 1: таблица + логика обновления при активности
+- День 2 (опц.): начисление очков/streak events + тесты
+
+## Итого P1:
+- минимально (только lessons+progress): 2–3 дня
+- типично (lessons + rules или streaks): 4–7 дней
+- полно (lessons + rules + streaks): 6–10 дней
+
+# P2 (teacher mode + social + монетизация)
+
+## Срез I — teacher_groups + members: 2–3 дня
+- День 1: таблицы + миграции
+- День 2: API (create group, invite/join, list members) + тесты
+- День 3 (опц.): роли/права аккуратно
+
+## Срез J — custom_tests + items: 2–4 дня
+- День 1: таблицы + миграции
+- День 2: API (create test, add items)
+- День 3: прохождение custom test (можно reuse exam flow)
+- День 4 (опц.): отчёты/статистика по группе
+
+## Срез K — лайки/комменты: 2–5 дней
+- лайки: 1–2 дня
+- комменты: ещё 1–3 дня (модерация можно позже)
+
+## Срез L — entitlements/purchases (монетизация, опционально): 3–7 дней
+- зависит от провайдера, webhooks, валидаций
+
+## Итого P2:
+- teacher-mode минимум (groups + custom tests без отчётов): 4–7 дней
+- social: 6–12 дней
+- монетизация: 9–19 дней
+---
+
+# Примечание: “введите никнейм или почту” (без усложнения)
+Минимально:
+- request-code принимает `identifier`
+- если есть `@` → email
+- иначе → nickname → ищем users.nickname → берём users.email
+- ответ: “код отправлен на t***@gmail.com” (masked_email)
+- при неизвестном нике/почте возвращаем одинаковый ответ (не палим существование)
+
+---
