@@ -29,6 +29,16 @@ services:
       POSTGRES_DB: navio
       POSTGRES_USER: navio
       POSTGRES_PASSWORD: navio
+      JWT_SECRET: 1212
+      JWT_ACCESS_TTL_MIN: 15
+      LOGIN_CODE_TTL_MIN: 10
+      LOGIN_CODE_PEPPER: 1212
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: "587"
+      SMTP_USER: naviolearn@gmail.com
+      SMTP_PASSWORD: "meew dcnz dszz uqul"
+      SMTP_FROM_NAME: "Navio Learn"
+      SMTP_FROM_EMAIL: naviolearn@gmail.com
     ports:
       - "8000:8000"
     depends_on:

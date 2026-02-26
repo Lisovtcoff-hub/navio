@@ -2,7 +2,7 @@ import re
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.core.security import (
 )
 from app.deps import get_current_user, get_db
 from app.models.login_code import LoginCode
+from app.services.emailer import send_login_code
 from app.models.refresh_session import RefreshSession
 from app.models.user import User
 from app.schemas.auth import (
@@ -53,7 +54,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/request-code", response_model=RequestCodeOut)
-def request_code(payload: RequestCodeIn, db: Annotated[Session, Depends(get_db)]):
+def request_code(
+        payload: RequestCodeIn,
+        background_tasks: BackgroundTasks,
+        db: Annotated[Session, Depends(get_db)],
+    ):
     ident = payload.identifier.strip()
     if not ident:
         raise HTTPException(status_code=400, detail="Identifier required")
@@ -89,8 +94,15 @@ def request_code(payload: RequestCodeIn, db: Annotated[Session, Depends(get_db)]
     db.add(login_code)
     db.commit()
 
-    print(f"[login code] {target_email}: {code}")  # пока так
+    # DEV-лог можно оставить временно, но лучше потом выключить флагом
+    print(f"[login code] {target_email}: {code}")
 
+    # Важно: отправку делаем после commit, чтобы код точно был сохранён
+    try:
+        background_tasks.add_task(send_login_code, target_email, code)
+    except Exception:
+        # если не отправилось — не критично, код всё равно сохранён
+        print(f"[login code] failed to send email to {target_email}")
     return RequestCodeOut(masked_email=mask_email(target_email))
 
 
