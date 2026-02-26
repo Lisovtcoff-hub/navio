@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import os
+
 from dotenv import load_dotenv
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel
 
 load_dotenv()
+
 
 class Settings(BaseModel):
     APP_ENV: str = os.getenv("APP_ENV", "dev")
@@ -16,5 +18,6 @@ class Settings(BaseModel):
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "Navio Learn")
     SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "")
+
 
 settings = Settings()

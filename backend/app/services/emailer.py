@@ -8,6 +8,7 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 def send_email(to_email: str, subject: str, text: str) -> None:
     msg = EmailMessage()
     msg["Subject"] = subject
@@ -26,10 +27,11 @@ def send_email(to_email: str, subject: str, text: str) -> None:
         # smtp.set_debuglevel(1)
 
         smtp.ehlo()
-        smtp.starttls(context=context)   # <-- фикс
+        smtp.starttls(context=context)  # <-- фикс
         smtp.ehlo()
         smtp.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
         smtp.send_message(msg)
+
 
 def send_login_code(to_email: str, code: str) -> None:
     subject = "Код входа в Navio Learn"

@@ -2,7 +2,7 @@ import re
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -16,7 +16,6 @@ from app.core.security import (
 )
 from app.deps import get_current_user, get_db
 from app.models.login_code import LoginCode
-from app.services.emailer import send_login_code
 from app.models.refresh_session import RefreshSession
 from app.models.user import User
 from app.schemas.auth import (
@@ -28,6 +27,7 @@ from app.schemas.auth import (
     TokenPairOut,
     VerifyCodeIn,
 )
+from app.services.emailer import send_login_code
 
 NICK_RE = re.compile(r"^[a-z0-9_]{3,24}$")
 
@@ -55,10 +55,10 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/request-code", response_model=RequestCodeOut)
 def request_code(
-        payload: RequestCodeIn,
-        background_tasks: BackgroundTasks,
-        db: Annotated[Session, Depends(get_db)],
-    ):
+    payload: RequestCodeIn,
+    background_tasks: BackgroundTasks,
+    db: Annotated[Session, Depends(get_db)],
+):
     ident = payload.identifier.strip()
     if not ident:
         raise HTTPException(status_code=400, detail="Identifier required")
