@@ -4,6 +4,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
+from fastapi import HTTPException
 
 
 def hash_with_pepper(value: str) -> str:
@@ -36,3 +37,31 @@ def make_access_token(user_id: str) -> str:
 def generate_refresh_token() -> str:
     # длинный случайный токен
     return secrets.token_urlsafe(48)
+
+
+def decode_access_token(token: str) -> str:
+    """
+    Проверяет access JWT:
+    - подпись (JWT_SECRET)
+    - exp (PyJWT проверяет автоматически)
+    - type == "access"
+    Возвращает user_id (sub) строкой.
+    """
+    secret = os.getenv("JWT_SECRET", "dev-secret")
+    try:
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+    except jwt.ExpiredSignatureError as err:
+        # exp истёк
+        raise HTTPException(status_code=401, detail="Access token expired") from err
+    except jwt.InvalidTokenError as err:
+        # подпись не сошлась / токен битый / не тот формат
+        raise HTTPException(status_code=401, detail="Invalid access token") from err
+
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid access token")
+
+    sub = payload.get("sub")
+    if not sub:
+        raise HTTPException(status_code=401, detail="Invalid access token")
+
+    return str(sub)

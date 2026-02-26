@@ -1,13 +1,18 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 
 class RequestCodeIn(BaseModel):
-    email: EmailStr
+    identifier: str
+
+
+class RequestCodeOut(BaseModel):
+    masked_email: str
 
 
 class VerifyCodeIn(BaseModel):
-    email: EmailStr
+    identifier: str
     code: str
+    nickname: str | None = None
 
 
 class TokenPairOut(BaseModel):
@@ -17,3 +22,11 @@ class TokenPairOut(BaseModel):
 
 class RefreshIn(BaseModel):
     refresh_token: str
+
+
+class LogoutIn(BaseModel):
+    refresh_token: str
+
+
+class LogoutOut(BaseModel):
+    ok: bool = True
