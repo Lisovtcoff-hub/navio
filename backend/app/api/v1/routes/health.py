@@ -21,7 +21,7 @@ def health():
 def health_db(db: Annotated[Session, Depends(get_db)]):
     try:
         db.execute(text("SELECT 1"))
-        return {"status": "ok"}
+        return {"status": "okok"}
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         return {"status": "error", "details": str(e)}
