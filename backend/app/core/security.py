@@ -6,15 +6,34 @@ from datetime import UTC, datetime, timedelta
 import jwt
 from fastapi import HTTPException
 
+_DEVELOPMENT_ENVS = {"dev", "development", "local", "test"}
+
+
+def _load_secret(name: str, development_default: str) -> str:
+    value = os.getenv(name, "").strip()
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+
+    if value:
+        if app_env not in _DEVELOPMENT_ENVS and len(value) < 32:
+            raise RuntimeError(f"{name} must contain at least 32 characters")
+        return value
+
+    if app_env in _DEVELOPMENT_ENVS:
+        return development_default
+
+    raise RuntimeError(f"{name} must be configured in the environment")
+
 
 def hash_with_pepper(value: str) -> str:
-    pepper = os.getenv("LOGIN_CODE_PEPPER", "dev-pepper")
+    pepper = _load_secret(
+        "LOGIN_CODE_PEPPER",
+        "development-login-code-pepper-change-me",
+    )
     data = (pepper + ":" + value).encode("utf-8")
     return hashlib.sha256(data).hexdigest()
 
 
 def generate_login_code() -> str:
-    # 6-значный код (000000..999999)
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
@@ -23,7 +42,10 @@ def utcnow() -> datetime:
 
 
 def make_access_token(user_id: str) -> str:
-    secret = os.getenv("JWT_SECRET", "dev-secret")
+    secret = _load_secret(
+        "JWT_SECRET",
+        "development-jwt-secret-change-me-now",
+    )
     ttl_min = int(os.getenv("JWT_ACCESS_TTL_MIN", "15"))
     payload = {
         "sub": user_id,
@@ -35,26 +57,20 @@ def make_access_token(user_id: str) -> str:
 
 
 def generate_refresh_token() -> str:
-    # длинный случайный токен
     return secrets.token_urlsafe(48)
 
 
 def decode_access_token(token: str) -> str:
-    """
-    Проверяет access JWT:
-    - подпись (JWT_SECRET)
-    - exp (PyJWT проверяет автоматически)
-    - type == "access"
-    Возвращает user_id (sub) строкой.
-    """
-    secret = os.getenv("JWT_SECRET", "dev-secret")
+    """Validate an access JWT and return its subject user ID."""
+    secret = _load_secret(
+        "JWT_SECRET",
+        "development-jwt-secret-change-me-now",
+    )
     try:
         payload = jwt.decode(token, secret, algorithms=["HS256"])
     except jwt.ExpiredSignatureError as err:
-        # exp истёк
         raise HTTPException(status_code=401, detail="Access token expired") from err
     except jwt.InvalidTokenError as err:
-        # подпись не сошлась / токен битый / не тот формат
         raise HTTPException(status_code=401, detail="Invalid access token") from err
 
     if payload.get("type") != "access":
