@@ -8,9 +8,20 @@ __pycache__/
 .venv/
 venv/
 
-# Env
+# Environment and secrets
 .env
 .env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Databases and logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
 
 # Node / Next.js
 node_modules/
