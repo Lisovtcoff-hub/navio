@@ -1,3 +1,4 @@
+import os
 import re
 from datetime import timedelta
 from typing import Annotated
@@ -94,8 +95,11 @@ def request_code(
     db.add(login_code)
     db.commit()
 
-    # DEV-лог можно оставить временно, но лучше потом выключить флагом
-    print(f"[login code] {target_email}: {code}")
+    # Never expose login codes in production logs. Local logging is opt-in.
+    app_env = os.getenv("APP_ENV", "development").strip().lower()
+    log_login_codes = os.getenv("LOG_LOGIN_CODES", "false").strip().lower() == "true"
+    if log_login_codes and app_env in {"dev", "development", "local", "test"}:
+        print(f"[login code] {target_email}: {code}")
 
     # Важно: отправку делаем после commit, чтобы код точно был сохранён
     try:
