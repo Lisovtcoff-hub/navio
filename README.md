@@ -1,81 +1,49 @@
-# Navio 🚗💨
+# Navio
 
 [![Backend CI](https://github.com/lisovcoff/navio/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/lisovcoff/navio/actions/workflows/backend-ci.yml)
-![Python](https://img.shields.io/badge/python-3.11+-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
-![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-**Navio** — open-source платформа для подготовки к теоретическому экзамену ПДД/ГИБДД РФ.
+Backend-first monorepo for a driving theory exam preparation product focused on Russian traffic rules. The implemented part of the repository is the FastAPI backend; `apps/mobile` and `apps/web` currently reserve the structure for planned client applications.
 
-- 🎯 Адаптивная тренировка  
-- 📝 Экзамен как в ГИБДД (20 вопросов)  
-- 📊 Прогресс и слабые темы  
-- 📚 Уроки и видео-разборы  
-- 👩‍🏫 Teacher mode (группы и кастомные тесты)
+## Highlights
 
-Проект находится в стадии активной разработки (MVP).
+- passwordless authentication with email codes, JWT access tokens, and refresh sessions;
+- PostgreSQL persistence with Alembic migrations;
+- local backend development workflow and Docker-based backend plus PostgreSQL environment;
+- pytest, Ruff, and GitHub Actions checks for the backend;
+- product scope, roadmap, UX flows, and data model documentation under `docs/`.
 
----
+## Stack
 
-## 📦 Архитектура
+`Python 3.11` · `FastAPI` · `PostgreSQL` · `SQLAlchemy` · `Alembic` · `Pytest` · `Ruff` · `Docker Compose` · `GitHub Actions`
 
-Mobile (Flutter)
+## Architecture
 
-→ Backend (FastAPI) → PostgreSQL
-/
-Web (Next.js)
+```text
+Planned mobile / web clients
+            |
+       FastAPI backend
+            |
+        PostgreSQL
+```
 
-- **Backend** — FastAPI + PostgreSQL  
-- **Mobile** — Flutter (Android / iOS)  
-- **Web** — Next.js  
-- **Infrastructure** — Docker Compose  
-- **CI** — GitHub Actions  
+The backend is the current production of work in this repository. Client directories are present as monorepo placeholders and product structure, but do not yet contain implemented applications.
 
----
+## Run locally
 
-## 📂 Структура репозитория
-
-````
-apps/
-mobile/        # Flutter приложение
-web/           # Web-клиент (Next.js)
-
-backend/         # API (FastAPI)
-content/         # Контент (вопросы, темы, уроки)
-docs/            # Документация (архитектура, API, БД и т.д.)
-infra/           # Docker, инфраструктура
-.github/         # CI/CD
-````
-
----
-
-## 🚀 Быстрый старт
-
-### Backend (локально)
-
-**Требования:** Python 3.11+
+Backend only:
 
 ```bash
 cd backend
 python -m venv .venv
-
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-
+source .venv/bin/activate
 pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-````
-
-Healthcheck:
-
-```
-http://localhost:8000/api/v1/health
 ```
 
----
+Health check: `http://localhost:8000/api/v1/health`
 
-### Backend + Postgres (Docker)
+Docker environment:
 
 ```bash
 cd infra
@@ -83,76 +51,35 @@ cp ../backend/.env.example ../backend/.env
 docker compose up --build
 ```
 
----
-
-## 🧪 Development
-
-### Lint & Format
+## Development and tests
 
 ```bash
+cd backend
 ruff check .
 ruff format .
-```
-
-### Tests
-
-```bash
 pytest -q
+alembic upgrade head
 ```
 
-CI автоматически проверяет:
+## Repository layout
 
-* форматирование (ruff)
-* линтинг
-* тесты (pytest)
+```text
+backend/         FastAPI application, migrations, and tests
+apps/mobile/     reserved structure for planned Flutter client
+apps/web/        reserved structure for planned web client
+content/         study content and related assets
+docs/            product, roadmap, UX, architecture, and data notes
+infra/           Docker Compose environment
+```
 
----
+## Product docs
 
-## 🔐 Авторизация
+- vision: [docs/00-vision.md](docs/00-vision.md)
+- MVP scope: [docs/01-mvp-scope.md](docs/01-mvp-scope.md)
+- roadmap: [docs/02-roadmap.md](docs/02-roadmap.md)
+- data model: [docs/06-db-schema.md](docs/06-db-schema.md)
 
-MVP использует passwordless-подход:
+## Notes
 
-* вход по коду из письма
-* JWT access token
-* refresh sessions
-
----
-
-## 🗺️ Roadmap (MVP)
-
-* [x] Монорепозиторий
-* [x] GitHub Actions (CI)
-* [x] Авторизация
-* [ ] Тренировка
-* [ ] Экзамен
-* [ ] Teacher mode
-* [ ] Прогресс
-* [ ] Android release
-* [ ] iOS release
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome.
-
-1. Fork repository
-2. Create feature branch
-3. Commit changes
-4. Open Pull Request
-
-Перед созданием PR убедитесь, что:
-
-* код проходит `ruff`
-* тесты проходят `pytest`
-* изменения описаны в PR
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
----
-
-© Navio
+- This repository is backend-first today; mobile and web client implementation is planned, not shipped.
+- The project is licensed under the MIT License.
