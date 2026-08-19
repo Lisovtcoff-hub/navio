@@ -1,6 +1,6 @@
 # Navio 🚗💨
 
-[![Backend CI](https://github.com/Lisovtcoff-hub/navio/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/Lisovtcoff-hub/navio/actions)
+[![Backend CI](https://github.com/lisovcoff/navio/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/lisovcoff/navio/actions/workflows/backend-ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green)
 ![Flutter](https://img.shields.io/badge/Flutter-3.x-blue)
@@ -156,4 +156,3 @@ This project is licensed under the MIT License.
 ---
 
 © Navio
-
